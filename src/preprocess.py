@@ -33,30 +33,6 @@ class Preprocessor:
     def __init__(self, full_data: pd.DataFrame):
         self.data = full_data
 
-    def fix_names_categories(self,col):
-        """
-        Fixes the names in the specified column by stripping whitespace, converting to lowercase,
-        and replacing specified names with their corrected versions. (used later in validate_data)
-        Args:
-            col (str): The name of the column to fix.
-        """
-        logger.info(f"Fixing names in column: {col}")
-        self.data[col] = self.data[col].str.strip().str.lower()
-        self.data[col] = self.data[col].replace(fix_names)
-        self.data[col] = self.data[col].astype('category')
-
-    def drop_failed_parses(self, col: str, parsed: pd.Series, dtype: str):
-        """
-        Drops rows where parsing failed for the given dtype (datetime or numeric).
-        """
-        errors_mask = parsed.isna() & self.data[col].notna()
-        if errors_mask.sum() > 0:
-            logger.warning(f"Incorrectly formatted {dtype} values dropped: {errors_mask.sum()} rows in {col}." )
-            logger.info(f"Dataset before dropping: {self.data.shape}")
-            self.data.drop(index=self.data[errors_mask].index, inplace=True)
-            logger.info(f"Dataset after dropping: {self.data.shape}")
-        self.data[col] = parsed
-
     def validate_data(self, date_cols: list, str_cols: list, num_cols: list):
         
         logger.info("=== Starting data validation ===")
@@ -96,9 +72,11 @@ class Preprocessor:
                 if col in date_cols:
                     # Attempt to parse the column as datetime
                     parsed = pd.to_datetime(self.data[col], errors='coerce')
-                    self.drop_failed_parses(col, parsed, dtype='datetime')
+                    # Handle rows where parsing failed
+                    self.failed_parses_handling(col, parsed, dtype='datetime')
                     # Check for logical inconsistencies in date columns`
                     for name, rule in timestamp_checks.items():
+                        # compute mask to catch date illogical values
                         mask = rule(self.data)  
                         logger.warning(f"Logically invalid date rows will be dropped, {mask.sum()} rows in total in {col}.")
                         logger.info(f"Dataset shape before dropping logically invalid date values: {self.data.shape}")
@@ -107,27 +85,19 @@ class Preprocessor:
 
 
                 elif col in str_cols:
-                    # Check for rare categories in 'product_category_name_english'
-                    # If the column is 'product_category_name_english', replace rare categories with 'Other'
-                    if col == 'product_category_name_english':
-                        # Fix names in the 'product_category_name_english' column
-                        self.fix_names_categories(col)
-                        threshold = 50
-                        counts = self.data[col].value_counts()
-                        logger.info("categories below threshold of 50 will be replaced with 'Other'")
-                        logger.info(f"counts of categories before categorizing 'Other': {counts}")
-                        rare_categories = counts[counts < threshold].index
-                        self.data[col] = self.data[col].replace(rare_categories, 'Other')
-                        counts = self.data[col].value_counts()
-                        logger.info(f"counts of categories after categorizing 'Other': {counts}")
-                    # Convert the column to string type
+                    self.outlier_handling(col)
                     self.data[col] = self.data[col].astype(str)
 
                 elif col in num_cols:
+                    # Attempt to parse the column as numeric
                     parsed = pd.to_numeric(self.data[col], errors='coerce')
-                    self.drop_failed_parses(col, parsed, dtype='numeric')
+                    # Handle rows where parsing failed
+                    self.failed_parses_handling(col, parsed, dtype='numeric')
+                    # Convert the column to numeric type
                     self.data[col] = pd.to_numeric(self.data[col])
+                    # Check for logical inconsistencies in numeric columns
                     for name, rule in numeric_checks.items():
+                        # compute mask to catch numeric illogical values
                         mask = rule(self.data)  
                         logger.warning(f"Logically invalid numeric rows will be dropped, there are {mask.sum()} rows in total in {col}.")
                         logger.info(f"Dataset shape before dropping logically invalid numeric values: {self.data.shape}")
@@ -139,3 +109,58 @@ class Preprocessor:
         
         logger.info("=== Data validation complete ===")
         return self.data
+    
+    def failed_parses_handling(self, col: str, parsed: pd.Series, dtype: str):
+        """
+        Drops rows where parsing failed for the given dtype (datetime or numeric).
+        Args:
+            col (str): The name of the column to check.
+            parsed (pd.Series): The parsed series of the column.
+            dtype (str): The expected data type ('datetime' or 'numeric').
+        Returns:
+            None, modifies the data attribute in place.
+        """
+        errors_mask = parsed.isna() & self.data[col].notna()
+        if errors_mask.sum() > 0:
+            logger.warning(f"Incorrectly formatted {dtype} values dropped: {errors_mask.sum()} rows in {col}." )
+            logger.info(f"Dataset before dropping: {self.data.shape}")
+            self.data.drop(index=self.data[errors_mask].index, inplace=True)
+            logger.info(f"Dataset after dropping: {self.data.shape}")
+        self.data[col] = parsed
+
+    def outlier_handling(self, col: str):
+        """
+        Handles outliers in the specified column.
+        Args:
+            col (str): The name of the column to handle outliers in.
+        returns:
+            None, modifies the data attribute in place."""
+        
+        if col == 'product_category_name_english':
+            logger.info(f"Handling outliers in column: {col}")
+            # Fix names in the column
+            self.string_handling(col)
+            # Define a threshold for rare categories
+            threshold = 50
+            counts = self.data[col].value_counts()
+            logger.info(f"Categories below threshold of {threshold} will be replaced with 'Other'")
+            logger.info(f"Counts of categories before categorizing 'Other': {counts}")
+            # Identify rare categories and replace them with 'Other'
+            rare_categories = counts[counts < threshold].index
+            self.data[col] = self.data[col].replace(rare_categories, 'Other')
+            counts = self.data[col].value_counts()
+            logger.info(f"Counts of categories after categorizing 'Other': {counts}")
+
+    def string_handling(self,col):
+        """
+        Fixes the strings in the specified column by stripping whitespace, converting to lowercase,
+        and replacing specified strings with their corrected versions. 
+        Args:
+            col (str): The name of the column to fix.
+        Returns:
+            None, modifies the data attribute in place.
+        """ 
+        logger.info(f"Fixing strings in column: {col}")
+        self.data[col] = self.data[col].str.strip().str.lower()
+        self.data[col] = self.data[col].replace(fix_names)
+        self.data[col] = self.data[col].astype('category')
