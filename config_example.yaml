@@ -12,6 +12,12 @@ paths:
   logs_dir: "(your working directory)/brazil_ecom/logs/"
   figures_dir: "(your working directory)/brazil_ecom/figures/"
 
+
+# --- LOG ---
+logger:
+  log_file: "(your working directory)/brazil_ecom/logs/pipeline.log"
+  level: INFO
+  
 # data settings 
 data:
   target_column: "delay_bin"  # for classification
@@ -59,7 +65,4 @@ evaluation:
   metrics_regression: ["r2", "rmse", "mae"]
   output_confusion_matrix: True
 
-# --- LOG ---
-logger:
-  log_file: logs_dir+'pipeline.log'
-  level: INFO
+

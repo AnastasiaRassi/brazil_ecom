@@ -3,6 +3,7 @@ project_name: "delay_prediction"
 random_seed: 42
 task_type: "classification"   # or "regression"
 
+
 # paths
 paths:
   raw_data_folder: "C:/Users/aalrassi/Documents/anastasiawork/ML_and_DS/data(brazil)/brazil_ecom"
@@ -10,6 +11,13 @@ paths:
   model_dir: "C:/Users/aalrassi/Documents/anastasiawork/ML_and_DS/brazil_ecom/models/"
   logs_dir: "C:/Users/aalrassi/Documents/anastasiawork/ML_and_DS/brazil_ecom/logs/"
   figures_dir: "C:/Users/aalrassi/Documents/anastasiawork/ML_and_DS/brazil_ecom/figures/"
+
+
+# --- LOG ---
+logger:
+  log_file: "C:/Users/aalrassi/Documents/anastasiawork/ML_and_DS/brazil_ecom/logs/pipeline.log"
+  level: INFO
+
 
 # data settings 
 data:
@@ -57,8 +65,3 @@ evaluation:
   metrics_classification: ["accuracy", "f1", "roc_auc"]
   metrics_regression: ["r2", "rmse", "mae"]
   output_confusion_matrix: True
-
-# --- LOG ---
-logger:
-  log_file: logs_dir+'pipeline.log'
-  level: INFO
