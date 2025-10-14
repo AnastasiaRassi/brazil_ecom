@@ -7,24 +7,24 @@ task_type: "classification"   # or "regression"
 paths:
   raw_data_folder: "C:/Users/aalrassi/Documents/anastasiawork/ML_and_DS/data(brazil)/brazil_ecom"
   processed_data: "C:/Users/aalrassi/Documents/anastasiawork/ML_and_DS/brazil_ecom/data/brazil_ecommrce.csv"
-  model_dir: "models/"
-  logs_dir: "logs/"
-  figures_dir: "figures/"
+  model_dir: "C:/Users/aalrassi/Documents/anastasiawork/ML_and_DS/brazil_ecom/models/"
+  logs_dir: "C:/Users/aalrassi/Documents/anastasiawork/ML_and_DS/brazil_ecom/logs/"
+  figures_dir: "C:/Users/aalrassi/Documents/anastasiawork/ML_and_DS/brazil_ecom/figures/"
 
 # data settings 
 data:
   target_column: "delay_bin"  # for classification
   
-num_cols: ['late_delivery', 'customer_zip_code_prefix', 'raw_price', 'freight_value',
+  num_cols: ['late_delivery', 'customer_zip_code_prefix', 'raw_price', 'freight_value',
             'num_items', 'payment_value', 'seller_id',
             'seller_zip_code_prefix', , 'seller_lat',
             'seller_lng', 'customer_lat', 'customer_lng', 'product_weight_g',
             'product_length_cm', 'product_height_cm', 'product_width_cm']
 
-str_cols: ['payment_type', 'product_category_name_english', 'seller_city', 'order_id', 'customer_id',
+  str_cols: ['payment_type', 'product_category_name_english', 'seller_city', 'order_id', 'customer_id',
             'customer_city', 'seller_state', 'order_status', 'customer_state']
 
-date_cols: ['order_purchase_timestamp', 'order_approved_at', 'order_delivered_carrier_date',
+  date_cols: ['order_purchase_timestamp', 'order_approved_at', 'order_delivered_carrier_date',
        'order_delivered_customer_date', 'order_estimated_delivery_date']     
 
 
@@ -57,3 +57,8 @@ evaluation:
   metrics_classification: ["accuracy", "f1", "roc_auc"]
   metrics_regression: ["r2", "rmse", "mae"]
   output_confusion_matrix: True
+
+# --- LOG ---
+logger:
+  log_file: logs_dir+'pipeline.log'
+  level: INFO

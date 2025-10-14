@@ -1,6 +1,6 @@
 import pandas as pd
 
-class preprocessing_utils:
+class PreprocessingUtils:
     def __init__(self, df: pd.DataFrame):
         self.df = df
 
@@ -19,4 +19,4 @@ class preprocessing_utils:
             mask = rule(df)
             df = df[~mask]
             print("Rows after:", df.shape[0] - before)
-            
+        
