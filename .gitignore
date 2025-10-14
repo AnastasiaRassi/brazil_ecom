@@ -1,6 +1,10 @@
-late_deliveries_pred/eda_report_html
+# late_deliveries_pred/eda_report_html
 late_deliveries_pred/exploration.ipynb
 late_deliveries_pred/result1,Naive.jpg
 requirements.txt
 venv
 data/brazil_ecom/
+notebooks/preprocessing.ipynb
+notebooks/training_new.ipynb
+notebooks/training.ipynb
+late_deliveries_pred
