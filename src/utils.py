@@ -3,8 +3,9 @@ from src import setup_logger
 
 logger = setup_logger()
 
-### ===== UTILS FOR PREPROCESSOR.PY =====
-def string_handling(self, col, fix_names: dict = fix_names):
+### ===== UTILS FOR PREPROCESSORING STAGE =====
+
+def string_handling(series: pd.Series, fix_names: dict) -> pd.Series:
     """
     Fixes the strings in the specified column by stripping whitespace, converting to lowercase,
     and replacing specified strings with their corrected versions. 
@@ -14,22 +15,24 @@ def string_handling(self, col, fix_names: dict = fix_names):
         None, modifies the data attribute in place.
     """ 
     logger.info(f"Fixing strings in column: {col}")
-    self.data[col] = self.data[col].str.strip().str.lower()
-    self.data[col] = self.data[col].replace(fix_names)
-    self.data[col] = self.data[col].astype('category')
-
-
-
-def replace_rare_categories(series: pd.Series, threshold: int, replacement: str = "other") -> pd.Series:
-    counts = series.value_counts(dropna=True)
-    rare = counts[counts < threshold].index
-    result = series.where(~series.isin(rare), replacement)
-    return result.astype('category')
-
-def string_handling(series: pd.Series, fix_names: dict) -> pd.Series:
-    series = series.str.strip().str.lower()
+    sseries = series.str.strip().str.lower()
     series = series.replace(fix_names)
     return series.astype('category')
+
+def replace_rare_categories(series: pd.Series, threshold: int, replacement: str) -> pd.Series:
+    """ Replace categories that appear fewer than threshold times with replacement. 
+    Keeps NaNs as-is. Preserves categorical dtype if input was categorical. 
+    """
+    counts = series.value_counts(dropna=True)
+    rare = counts[counts < threshold].index
+    logger.debug(f"Replacing rare categories with {str}")
+    logger.info(f"shape before:{len(series)}")   
+    result = series.where(~series.isin(rare), replacement)
+    # cast the column as categorical
+    logger.info(f"shape after:{len(series)}")
+    return result.astype('category')
+
+    
 
 def failed_parses_handling(data: pd.DataFrame, col: str, parsed: pd.Series, dtype: str) -> pd.DataFrame:
     """ 
@@ -52,46 +55,3 @@ def failed_parses_handling(data: pd.DataFrame, col: str, parsed: pd.Series, dtyp
     data[col] = parsed
     return data
     
-def outlier_handling(self, col: str):
-    """
-    Handles outliers in the specified column.
-    Args:
-        col (str): The name of the column to handle outliers in.
-    returns:
-        None, modifies the data attribute in place."""
-    
-    if self.data[col].dtype in ['object', 'category']:
-        logger.info(f"String handling in string column: {col}, before outlier handling")
-        self.string_handling(col)
-
-    elif pd.api.types.is_numeric_dtype(self.data[col]):
-        logger.info(f"Numeric outlier handling in numeric column: {col}")
-        # Implement numeric outlier handling if needed
-
-    # Handle rare categories in categorical column product_category_name_english
-    if col == 'product_category_name_english':
-        logger.info(f"Handling outliers in column: {col}")
-        # Define a threshold for rare categories
-        threshold = self.config.get("rare_thresholds", {})
-        self.data[col] = self.replace_rare_categories(self.data[col], threshold)
-
-def replace_rare_categories(self, series: pd.Series, threshold: int, replacement: str) -> pd.Series:
-    """
-    Replace categories that appear fewer than `threshold` times with `replacement`.
-    Keeps NaNs as-is. Preserves categorical dtype if input was categorical.
-    """
-    # count only non-null values for thresholding
-    counts = series.value_counts(dropna=True)
-    logger.debug(f"Category counts (for replacement decision): {counts.to_dict()}")
-
-    rare = counts[counts < threshold].index
-    if len(rare) == 0:
-        logger.debug("No rare categories to replace.")
-        return series
-
-    result = series.where(~series.isin(rare), replacement)
-
-    # cast the column as categorical
-    return result.astype('category')
-
-

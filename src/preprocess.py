@@ -1,5 +1,6 @@
 import pandas as pd, os
-from src import setup_logger
+from src import setup_logger, string_handling, replace_rare_categories, failed_parses_handling
+
 
 logger = setup_logger()
 
@@ -40,6 +41,7 @@ class Preprocessor:
         elif config_path:
             with open(config_path, "r") as f:
                 self.config = yaml.safe_load(f) or {}
+    
         else:
             self.config = {}
 
@@ -130,6 +132,31 @@ class Preprocessor:
         """
         once data has been validated, it gets cleaned here.
         """
+        
+    def outlier_handling(self, col: str):
+        """
+        Handles outliers in the specified column.
+        Args:
+            col (str): The name of the column to handle outliers in.
+        returns:
+            None, modifies the data attribute in place."""
+        
+        if self.data[col].dtype in ['object', 'category']:
+            logger.info(f"String handling in string column: {col}, before outlier handling")
+            self.string_handling(col)
+
+        elif pd.api.types.is_numeric_dtype(self.data[col]):
+            logger.info(f"Numeric outlier handling in numeric column: {col}")
+            # Implement numeric outlier handling if needed
+
+        # Handle rare categories in categorical column product_category_name_english
+        if col == 'product_category_name_english':
+            logger.info(f"Handling outliers in column: {col}")
+            # Define a threshold for rare categories
+            threshold = self.config.get("rare_thresholds", {})
+            self.data[col] = self.replace_rare_categories(self.data[col], threshold)
+
+
         
         return self.data
     
