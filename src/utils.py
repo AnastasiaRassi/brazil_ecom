@@ -14,8 +14,8 @@ def string_handling(series: pd.Series, fix_names: dict) -> pd.Series:
     Returns:
         None, modifies the data attribute in place.
     """ 
-    logger.info(f"Fixing strings in column: {col}")
-    sseries = series.str.strip().str.lower()
+    logger.info(f"Fixing strings in column: {series}")
+    series = series.str.strip().str.lower().replace(fix_names)
     series = series.replace(fix_names)
     return series.astype('category')
 
@@ -25,7 +25,7 @@ def replace_rare_categories(series: pd.Series, threshold: int, replacement: str)
     """
     counts = series.value_counts(dropna=True)
     rare = counts[counts < threshold].index
-    logger.debug(f"Replacing rare categories with {str}")
+    logger.debug(f"Replacing rare categories with {replacement}")
     logger.info(f"shape before:{len(series)}")   
     result = series.where(~series.isin(rare), replacement)
     # cast the column as categorical

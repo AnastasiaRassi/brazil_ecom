@@ -1,4 +1,4 @@
-import pandas as pd, os
+import pandas as pd, os, yaml
 from src import setup_logger, string_handling, replace_rare_categories, failed_parses_handling
 
 
@@ -32,9 +32,9 @@ numeric_checks = {
 
 class Preprocessor:
     def __init__(self, full_data: pd.DataFrame, config: dict = None, 
-                config_path: str = os.join.path(base_path,'config.yaml')):
+                 config_path = os.path.join(base_path, 'config.yaml')):
 
-        self.data = full_data
+        self.data = full_data 
         # load config either from dict or yaml file
         if config is not None:
             self.config = config
@@ -45,118 +45,151 @@ class Preprocessor:
         else:
             self.config = {}
 
-        # defaults
-        self.per_column_thresholds = self.config.get("rare_thresholds", {})
+        self.threshold_product_names = self.config.get("rare_thresholds", {}).get("product_names", 10)
+        self.threshold_num_items = self.config.get("rare_thresholds", {}).get("num_items", 10)
 
+        self.date_cols =self.config.get("data", {}).get("date_cols", [])
+        self.str_cols = self.config.get("data", {}).get("str_cols", [])
+        self.num_cols = self.config.get("data", {}).get("num_cols", [])
 
-    def validate_data(self, date_cols: list, str_cols: list, num_cols: list, threshold: int, 
-                      fix_names: dict, timestamp_checks: dict, numeric_checks:dict ) -> pd.DataFrame:
-        
+    def preprocess_pipeline(self):
+            """
+            preprocesses the data entirely
+            """
+            self.validate_data()
+            self.clean_data()   
+            self.handle_nulls()   
+            self.handle_outliers()            
+             
+            return self.data
+
+    def validate_data(self) -> pd.DataFrame:
+  
         logger.info("=== Starting data validation ===")
 
         """
         Validates the data for nulls, duplicates, correct datatypes.
-        Args:
-            date_cols (list): List of columns expected to be of datetime type.  (within config.yaml)
-            str_cols (list): List of columns expected to be of string type.  (within config.yaml)
-            num_cols (list): List of columns expected to be of numeric type.  (within config.yaml)
-            threshold (int): Threshold for rare categories in categorical columns. (within config.yaml)
         Returns: 
                 None, is a prerequisite to cleaning.
         """
         
-        logger.info("looking for nulls, duplicates, and correct datatypes in the data...")
-
-        # Check for null values
-        if self.data.isnull().sum().sum() > 0:
-            logger.warning("Null values found in the data.")
-        else:
-            logger.info("No null values found in the data.")
-        # Check for duplicates
-        if self.data.duplicated().sum() > 0:
-
-            logger.warning("Data contains duplicate rows, they will be removed.")
-
-            logger.info(f"Dataset shape before dropping duplicates: {self.data.shape}")
-            self.data = self.data.drop_duplicates()
-            logger.info(f"Dataset shape after  dropping duplicates: {self.data.shape}")
-
-        else:
-            logger.info("No duplicate rows found in the data.")
-        
         # enforce correct datatypes
         for col in self.data.columns:
             try:
-                if col in date_cols:
+                if col in self.date_cols:
                     # Attempt to parse the column as datetime
                     parsed = pd.to_datetime(self.data[col], errors='coerce')
                     # Handle rows where parsing failed
-                    self.failed_parses_handling(col, parsed, dtype='datetime')
-                    # Check for logical inconsistencies in date columns`
-                    for name, rule in timestamp_checks.items():
-                        # compute mask to catch date illogical values
-                        mask = rule(self.data)  
-                        logger.warning(f"Logically invalid date rows will be dropped, {mask.sum()} rows in total in {col}.")
-                        logger.info(f"Dataset shape before dropping logically invalid date values: {self.data.shape}")
-                        self.data = self.data[~mask]   
-                        logger.info(f"Dataset shape after dropping logically invalid date values: {self.data.shape}")
+                    failed_parses_handling(self.data, col, parsed, dtype='datetime')
+                    self.data = failed_parses_handling(self.data, col , parsed, dtype='datetime')
 
-
-                elif col in str_cols:
-                    self.outlier_handling(col)
+                elif col in self.str_cols:
                     self.data[col] = self.data[col].astype(str)
 
-                elif col in num_cols:
+                elif col in self.num_cols:
                     # Attempt to parse the column as numeric
                     parsed = pd.to_numeric(self.data[col], errors='coerce')
                     # Handle rows where parsing failed
-                    self.failed_parses_handling(col, parsed, dtype='numeric')
-                    # Convert the column to numeric type
-                    self.data[col] = pd.to_numeric(self.data[col])
-                    # Check for logical inconsistencies in numeric columns
-                    for name, rule in numeric_checks.items():
-                        # compute mask to catch numeric illogical values
-                        mask = rule(self.data)  
-                        logger.warning(f"Logically invalid numeric rows will be dropped, there are {mask.sum()} rows in total in {col}.")
-                        logger.info(f"Dataset shape before dropping logically invalid numeric values: {self.data.shape}")
-                        self.data = self.data[~mask]   
-                        logger.info(f"Dataset shape after dropping logically invalid numeric values: {self.data.shape}")
+                    failed_parses_handling(col, parsed, dtype='numeric')
+                    self.data = failed_parses_handling(self.data, col, parsed, dtype='numeric')
 
             except Exception as e:
                 logger.error(f"Column {col} not consistent with its required format! {e}", exc_info=True)
         
         logger.info("=== Data validation complete ===")
     
-    def clean(self):
-        self.validate_data(self.data)
+    def clean_data(self):
+        logger.info("=== Starting data cleaning ===")
+
         """
-        once data has been validated, it gets cleaned here.
+        Clean data strings and irregularities
+        returns:
+            None, modifies data in place.
+        """
+        logger.info("looking for nulls, duplicates, and correct datatypes in the data...")
+
+        # Check for duplicates
+        if self.data.duplicated().sum() > 0:
+
+            logger.warning("Data contains duplicate rows, they will be removed.")
+            logger.info(f"Dataset shape before dropping duplicates: {self.data.shape}")
+            self.data = self.data.drop_duplicates()
+            logger.info(f"Dataset shape after  dropping duplicates: {self.data.shape}")
+
+        else:
+            logger.info("No duplicate rows found in the data.")
+
+        for col in self.data.columns:   
+            if self.data[col].dtype in ['object', 'category']:
+                logger.info(f"String handling in string column: {col}, before outlier handling")
+                string_handling(col)
+                
+            if col in self.date_cols:
+                # Check for logical inconsistencies in date columns`
+                for name, rule in timestamp_checks.items():
+                    # compute mask to catch date illogical values
+                    mask = rule(self.data)  
+                    logger.warning(f"Logically invalid date rows will be dropped, {mask.sum()} rows in total in {col}.")
+                    logger.info(f"Dataset shape before dropping logically invalid date values: {self.data.shape}")
+                    self.data = self.data[~mask]   
+                    logger.info(f"Dataset shape after dropping logically invalid date values: {self.data.shape}")
+
+            # Check for logical inconsistencies in numeric columns
+            if col in self.num_cols:
+                for name, rule in numeric_checks.items():
+                    # compute mask to catch numeric illogical values
+                    mask = rule(self.data)  
+                    logger.warning(f"Logically invalid numeric rows will be dropped, there are {mask.sum()} rows in total in {col}.")
+                    logger.info(f"Dataset shape before dropping logically invalid numeric values: {self.data.shape}")
+                    self.data = self.data[~mask]   
+                    logger.info(f"Dataset shape after dropping logically invalid numeric values: {self.data.shape}")
+
+        logger.info("=== Data cleaning complete ===")  
+         
+
+    def handle_outliers(self):
+        logger.info("=== Started Outlier handling ===")
+        """
+        Handles outliers in the dataset.
+        returns:
+            None, modifies the data attribute in place.
         """
         
-    def outlier_handling(self, col: str):
+        for col in self.data.columns: 
+            if col == 'product_category_name_english':
+                logger.info(f"Handling outliers in column: {col}")
+                # Define a threshold for rare categories
+                threshold = self.threshold_product_names
+                self.data[col] = replace_rare_categories(self.data[col], threshold)
+                continue
+
+            if col == 'num_items':
+                logger.info(f"Handling outliers in column: {col}")
+                # Define a threshold for rare categories
+                threshold = self.threshold_num_items
+                self.data[col] = self.replace_rare_categories(self.data[col], threshold)
+                continue
+
+            if pd.api.types.is_numeric_dtype(self.data[col]):
+                logger.info(f"Numeric outlier handling in numeric column: {col}")
+                # Implement numeric outlier handling if needed
+
+            # Handle rare categories in categorical column product_category_name_english
+            
+
+        logger.info("=== Outlier handling complete ===")
+
+    def handle_nulls(self):
+        logger.info("=== Started Nulls handling ===")
         """
-        Handles outliers in the specified column.
+        Handles nulls in dataset.
         Args:
             col (str): The name of the column to handle outliers in.
+            threshold (int): Threshold for rare categories in categorical columns. (within config.yaml)
         returns:
             None, modifies the data attribute in place."""
         
-        if self.data[col].dtype in ['object', 'category']:
-            logger.info(f"String handling in string column: {col}, before outlier handling")
-            self.string_handling(col)
-
-        elif pd.api.types.is_numeric_dtype(self.data[col]):
-            logger.info(f"Numeric outlier handling in numeric column: {col}")
-            # Implement numeric outlier handling if needed
-
-        # Handle rare categories in categorical column product_category_name_english
-        if col == 'product_category_name_english':
-            logger.info(f"Handling outliers in column: {col}")
-            # Define a threshold for rare categories
-            threshold = self.config.get("rare_thresholds", {})
-            self.data[col] = self.replace_rare_categories(self.data[col], threshold)
-
-
         
-        return self.data
+        
+        logger.info("=== Nulls handling complete ===")
     
