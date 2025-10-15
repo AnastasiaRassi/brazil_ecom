@@ -7,4 +7,4 @@ notebooks/preprocessing.ipynb
 notebooks/training_new.ipynb
 notebooks/training.ipynb
 late_deliveries_pred
-config(not done yet).yaml
+config.yaml

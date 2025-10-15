@@ -34,7 +34,8 @@ data:
   date_cols: ['order_purchase_timestamp', 'order_approved_at', 'order_delivered_carrier_date',
        'order_delivered_customer_date', 'order_estimated_delivery_date']     
 
-
+  threshold: 50  # threshold for rare categories in categorical variable product_category_name_english
+  
   test_size: 0.3
   test_to_val: 0.5 # once 30% of data is test data, how much is retained for validation vs test ? (RATIO)
   min_rows: 15
