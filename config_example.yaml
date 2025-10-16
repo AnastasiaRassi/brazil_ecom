@@ -33,7 +33,8 @@ data:
 
   date_cols: ['order_purchase_timestamp', 'order_approved_at', 'order_delivered_carrier_date',
        'order_delivered_customer_date', 'order_estimated_delivery_date']     
-
+  zip_cols_seller: ['seller_lat','seller_lng']
+  zip_cols_customer: ['customer_lat','customer_lng']
   
   test_size: 0.3
   test_to_val: 0.5 # once 30% of data is test data, how much is retained for validation vs test ? (RATIO)
@@ -41,8 +42,8 @@ data:
   stratify: True   # only applies for classification
 
 rare_thresholds:
-  product_names: 5
-  num_items: 3
+  product_names: 50
+  num_items: 10
 # #preprocessing 
 # preprocessing:
 #   scale_numeric: True

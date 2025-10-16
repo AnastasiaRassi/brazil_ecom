@@ -1,7 +1,11 @@
 import pandas as pd
 from src import setup_logger
+from geopy.geocoders import Nominatim
+import time
 
 logger = setup_logger()
+
+# the preprocessing utils, for simplicity, have been specified for each stage.
 
 ### ===== UTILS FOR PREPROCESSORING STAGE =====
 
@@ -19,7 +23,7 @@ def string_handling(series: pd.Series, fix_names: dict) -> pd.Series:
     series = series.replace(fix_names)
     return series.astype('category')
 
-def replace_rare_categories(series: pd.Series, threshold: int, replacement: str) -> pd.Series:
+def replace_rare_categories(series: pd.Series, threshold: int, replacement) -> pd.Series:
     """ Replace categories that appear fewer than threshold times with replacement. 
     Keeps NaNs as-is. Preserves categorical dtype if input was categorical. 
     """
@@ -54,4 +58,73 @@ def failed_parses_handling(data: pd.DataFrame, col: str, parsed: pd.Series, dtyp
         logger.info(f"Shape after {data.shape[0]}")
     data[col] = parsed
     return data
+ 
+ 
+
+def get_lat_lng(city_name: str, state_name: str, country: str):
+    """
+    Computes the latitude and longitude of a location using Nominatim.
+
+    Args:
+        city_name (str): Name of the city.
+        state_name (str or None): Name of the state (optional).
+        country (str): Name of the country.
+
+    Returns:
+        tuple: (latitude, longitude) if found, else (None, None).
+    """
+    if not city_name or not country:
+        logger.warning(f"Missing city or country: city='{city_name}', country='{country}'")
+        return None, None
+
+    query = f"{city_name}, {state_name}, {country}" if state_name else f"{city_name}, {country}"
+    geolocator = Nominatim(user_agent="my_app")
+
+    try:
+        location = geolocator.geocode(query)
+        if location:
+            logger.debug(f"Geocoded {query}: ({location.latitude}, {location.longitude})")
+            return location.latitude, location.longitude
+        else:
+            logger.warning(f"Geocoding failed for {query}")
+            return None, None
+    except Exception as e:
+        logger.error(f"Error geocoding {query}: {e}")
+        return None, None
+
+
+def handle_null_zip_codes(data: pd.DataFrame) -> pd.DataFrame:
+    """
+    Imputes missing latitude and longitude for customer and seller locations
+    using city, state, and country information.
+
+    Args:
+        data (pd.DataFrame): DataFrame containing columns:
+            - '{prefix}_city', '{prefix}_state', '{prefix}_lat', '{prefix}_lng', 'country'
+            - prefix is either 'customer' or 'seller'
+
+    Returns:
+        pd.DataFrame: DataFrame with imputed lat/lng values. Rows with missing
+                      city or country remain NaN but are logged.
+    """
+    for prefix in ['customer', 'seller']:
+        loc_missing_rows = 0
+        missing = data[data[f'{prefix}_lat'].isnull() | data[f'{prefix}_lng'].isnull()]
+        logger.debug(f"Started null handling zip codes for {prefix}... Total missing: {len(missing)}")
+
+        for idx, row in missing.iterrows():
+            if pd.isnull(row['country']) or pd.isnull(row[f'{prefix}_city']):
+                loc_missing_rows += 1
+                logger.debug(f"Skipping row {idx} for {prefix}: missing city or country")
+                continue
+
+            lat, lng = get_lat_lng(row[f'{prefix}_city'], row.get(f'{prefix}_state'), row['country'])
+            data.at[idx, f'{prefix}_lat'] = lat
+            data.at[idx, f'{prefix}_lng'] = lng
+            time.sleep(1)  # Respect Nominatim rate limits
+
+        logger.warning(f"{loc_missing_rows} rows were missing essential location info for {prefix} "
+                       "and could not be imputed.")
+    logger.info("Null zip code handling complete.")
     
+    return data

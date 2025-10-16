@@ -1,5 +1,5 @@
 import pandas as pd, os, yaml
-from src import setup_logger, string_handling, replace_rare_categories, failed_parses_handling
+from src import setup_logger, string_handling, replace_rare_categories, failed_parses_handling, handle_null_zip_codes
 
 
 logger = setup_logger()
@@ -47,18 +47,31 @@ class Preprocessor:
 
         self.threshold_product_names = self.config.get("rare_thresholds", {}).get("product_names", 10)
         self.threshold_num_items = self.config.get("rare_thresholds", {}).get("num_items", 10)
-
+        self.threshold_ratio_days_till_arrival = self.config.get("rare_thresholds", {}).get("days_till_arrival_ratio", 10)
         self.date_cols =self.config.get("data", {}).get("date_cols", [])
+        self.country =self.config.get("data", {}).get("country", "")
         self.str_cols = self.config.get("data", {}).get("str_cols", [])
         self.num_cols = self.config.get("data", {}).get("num_cols", [])
 
+
     def preprocess_pipeline(self):
             """
-            preprocesses the data entirely
-            """
+            Executes the full preprocessing pipeline:
+            1. Validates schema and datatypes
+            2. Cleans data inconsistencies
+            3. Handles nulls (imputation or drop)
+            4. Detects and handles outliers
+
+              Returns:
+            pd.DataFrame: fully preprocessed dataset
+        """ 
             self.validate_data()
             self.clean_data()   
-            self.handle_nulls()   
+            self.handle_nulls()  
+            # what couldn't be imputed gets dropped
+            before = self.data.shape[0]
+            self.data.dropna(inplace=True)
+            logger.info(f"Dropped {before - self.data.shape[0]} rows containing nulls.")
             self.handle_outliers()            
              
             return self.data
@@ -80,7 +93,6 @@ class Preprocessor:
                     # Attempt to parse the column as datetime
                     parsed = pd.to_datetime(self.data[col], errors='coerce')
                     # Handle rows where parsing failed
-                    failed_parses_handling(self.data, col, parsed, dtype='datetime')
                     self.data = failed_parses_handling(self.data, col , parsed, dtype='datetime')
 
                 elif col in self.str_cols:
@@ -90,7 +102,6 @@ class Preprocessor:
                     # Attempt to parse the column as numeric
                     parsed = pd.to_numeric(self.data[col], errors='coerce')
                     # Handle rows where parsing failed
-                    failed_parses_handling(col, parsed, dtype='numeric')
                     self.data = failed_parses_handling(self.data, col, parsed, dtype='numeric')
 
             except Exception as e:
@@ -106,6 +117,12 @@ class Preprocessor:
         returns:
             None, modifies data in place.
         """
+
+        # delivered orders are of no significance in delay prediction
+        if 'order_status' in self.data.columns:
+            self.data = self.data[self.data['order_status'] == 'delivered'].copy()
+            self.data.drop(columns=['order_status'], inplace=True)
+
         logger.info("looking for nulls, duplicates, and correct datatypes in the data...")
 
         # Check for duplicates
@@ -118,11 +135,12 @@ class Preprocessor:
 
         else:
             logger.info("No duplicate rows found in the data.")
-
-        for col in self.data.columns:   
+        
+        for col in self.data.columns: 
+        # logical irregularities
             if self.data[col].dtype in ['object', 'category']:
                 logger.info(f"String handling in string column: {col}, before outlier handling")
-                string_handling(col)
+                self.data[col] = string_handling(self.data[col], fix_names)
                 
             if col in self.date_cols:
                 # Check for logical inconsistencies in date columns`
@@ -148,39 +166,47 @@ class Preprocessor:
          
 
     def handle_outliers(self):
-        logger.info("=== Started Outlier handling ===")
         """
         Handles outliers in the dataset.
         returns:
             None, modifies the data attribute in place.
         """
+
+        logger.info("=== Started Outlier handling ===")
         
         for col in self.data.columns: 
             if col == 'product_category_name_english':
                 logger.info(f"Handling outliers in column: {col}")
-                # Define a threshold for rare categories
                 threshold = self.threshold_product_names
                 self.data[col] = replace_rare_categories(self.data[col], threshold)
                 continue
 
             if col == 'num_items':
                 logger.info(f"Handling outliers in column: {col}")
-                # Define a threshold for rare categories
+                # Clip values above 7
                 threshold = self.threshold_num_items
-                self.data[col] = self.replace_rare_categories(self.data[col], threshold)
+                before_max = self.data[col].max()
+                self.data[col] = self.data[col].clip(upper = threshold)
+                logger.info(f"Clipped num_items max from {before_max} to {self.data[col].max()}")
+                continue
+
+            if col == 'days_till_arrival':
+                logger.info(f"Handling outliers in column: {col}")
+                # Drop rows above 0.98 quantile
+                threshold = self.threshold_ratio_days_till_arrival 
+                quantile_98 = self.data[col].quantile(threshold)
+                before_shape = self.data.shape[0]
+                self.data = self.data[self.data[col] <= quantile_98]
+                logger.info(f"Dropped {before_shape - self.data.shape[0]} rows with days_till_arrival above 0.98 quantile ({quantile_98})")
                 continue
 
             if pd.api.types.is_numeric_dtype(self.data[col]):
                 logger.info(f"Numeric outlier handling in numeric column: {col}")
-                # Implement numeric outlier handling if needed
-
-            # Handle rare categories in categorical column product_category_name_english
-            
+                # other numeric outlier handling if needed
 
         logger.info("=== Outlier handling complete ===")
 
     def handle_nulls(self):
-        logger.info("=== Started Nulls handling ===")
         """
         Handles nulls in dataset.
         Args:
@@ -189,7 +215,10 @@ class Preprocessor:
         returns:
             None, modifies the data attribute in place."""
         
-        
-        
+        logger.info("=== Started Nulls handling ===")
+        # currently no other columns needs this, looking at exploration.ipynb
+        self.data = handle_null_zip_codes(self.data)
+
         logger.info("=== Nulls handling complete ===")
+
     
