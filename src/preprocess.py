@@ -26,16 +26,16 @@ class Preprocessor:
               Returns:
             pd.DataFrame: fully preprocessed dataset
         """ 
-            Validator.validate_data(self.data)
-            Cleaner(self.data).clean_data()  
-            NullHandler.handle_nulls(self.data)  
+            
+            self.data = Validator.validate_data(self.data)
+            self.data = Cleaner(self.data).clean_data()
+            self.data = NullHandler.handle_nulls(self.data)
             # what couldn't be imputed gets dropped
             self.data.dropna(inplace=True)
-            OutlierHandler.handle_outliers(self.data)
+            self.data = OutlierHandler.handle_outliers(self.data)
             if config["settings"]["task_type"] != 'regression':
-                TargetEngineer.target_engineering(self.data)
-            FeatureEngineer.feature_engineering(self.data)
-            return self.data
+                self.data = TargetEngineer.target_engineering(self.data)
+            return FeatureEngineer.feature_engineering(self.data)
     
 class Validator:
     @staticmethod
@@ -75,12 +75,12 @@ class Validator:
                 logger.error(f"Column {col} not consistent with its required format! {e}", exc_info=True)
         
         logger.info("=== Data validation complete ===")
+        return data
 
 class Cleaner:
     def __init__(self, data: pd.DataFrame):
         self.data = data
 
-    # === MAIN ENTRY POINT ===
     def clean_data(self):
         logger.info("=== Starting data cleaning ===")
         self._filter_delivered_orders()
@@ -90,8 +90,6 @@ class Cleaner:
         self._check_numeric_rules()
         logger.info("=== Data cleaning complete ===")
         return self.data
-
-    # === HELPERS ===
 
     def _filter_delivered_orders(self):
         if 'order_status' in self.data.columns:
@@ -147,7 +145,7 @@ class Cleaner:
                  "rule": lambda df: df["order_delivered_customer_date"] < df["order_delivered_carrier_date"]},
             ]
         }
-        date_cols = config['data']['str_cols']
+        date_cols = config['data']['date_cols']
         for col in self.date_cols:
             rules_for_col = timestamp_checks.get(col, [])
             if not rules_for_col:
@@ -248,7 +246,6 @@ class NullHandler:
         logger.info("=== Nulls handling complete ===")
         return data
 
-
 class TargetEngineer:
     @staticmethod
     def target_engineering(data: pd.DataFrame) -> pd.DataFrame:
@@ -278,7 +275,6 @@ class TargetEngineer:
 
         else:
             logger.debug(f"Unknown binning method '{bin_method}', skipping target binning.")
-
         return data
 
 class FeatureEngineer:
@@ -364,5 +360,4 @@ class FeatureEngineer:
 
         # Drop unnecessary columns
         data.drop(columns=config["data"]["cols_to_drop"], inplace=True, errors='ignore')
-
         return data
