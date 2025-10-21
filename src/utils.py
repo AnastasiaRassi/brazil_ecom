@@ -1,130 +1,144 @@
 import pandas as pd
-from src import setup_logger
+import numpy as np
+import os, yaml, json, time
+from pathlib import Path
 from geopy.geocoders import Nominatim
-import time
+from geopy.extra.rate_limiter import RateLimiter
+from src import setup_logger
 
 logger = setup_logger()
+base_path = 'C:/Users/aalrassi/Documents/anastasiawork/ML_and_DS/brazil_ecom/'
+config_path = os.path.join(base_path, 'config.yaml')
 
-# the preprocessing utils, for simplicity, have been specified for each stage.
+# Load config
+with open(config_path, "r") as f:
+    config = yaml.safe_load(f) or {}
 
-### ===== UTILS FOR PREPROCESSORING STAGE =====
 
-def string_handling(series: pd.Series, fix_names: dict) -> pd.Series:
-    """
-    Fixes the strings in the specified column by stripping whitespace, converting to lowercase,
-    and replacing specified strings with their corrected versions. 
-    Args:
-        col (str): The name of the column to fix.
-    Returns:
-        None, modifies the data attribute in place.
-    """ 
-    logger.info(f"Fixing strings in column: {series}")
-    series = series.str.strip().str.lower().replace(fix_names)
-    series = series.replace(fix_names)
-    return series.astype('category')
+class GeoCoder:
+    def __init__(self, user_agent=None, cache_path=None):
 
-def replace_rare_categories(series: pd.Series, threshold: int, replacement) -> pd.Series:
-    """ Replace categories that appear fewer than threshold times with replacement. 
-    Keeps NaNs as-is. Preserves categorical dtype if input was categorical. 
-    """
-    counts = series.value_counts(dropna=True)
-    rare = counts[counts < threshold].index
-    logger.debug(f"Replacing rare categories with {replacement}")
-    logger.info(f"shape before:{len(series)}")   
-    result = series.where(~series.isin(rare), replacement)
-    # cast the column as categorical
-    logger.info(f"shape after:{len(series)}")
-    return result.astype('category')
+        geocoding_cfg = config.get("geocoding", {})
+        user_agent = user_agent or geocoding_cfg.get("user_agent", "geo_pipeline")
+        min_delay = geocoding_cfg.get("min_delay_seconds", 1)
+        max_retries = geocoding_cfg.get("max_retries", 2)
+        error_wait = geocoding_cfg.get("error_wait_seconds", 2.0)
 
-    
+        # Setup geolocator with rate limiter
+        self._geolocator = Nominatim(user_agent=user_agent, timeout=10)
+        self._geocode = RateLimiter(
+            self._geolocator.geocode,
+            min_delay_seconds=min_delay,
+            max_retries=max_retries,
+            error_wait_seconds=error_wait
+        )
 
-def failed_parses_handling(data: pd.DataFrame, col: str, parsed: pd.Series, dtype: str) -> pd.DataFrame:
-    """ 
-    Drops rows where parsing failed for the given dtype (datetime or numeric).
-    Args: 
-        data: 
-        col (str): The name of the column to check. 
-        parsed (pd.Series): The parsed series of the column. dtype 
-        (str): The expected data type ('datetime' or 'numeric').
-    Returns: 
-        None, modifies the data attribute in place.
-    """
+        # Cache path from config or default
+        cache_path = cache_path or config.get(
+            "paths", {}
+        ).get("GEOCODE_CACHE_PATH", Path(base_path) / "geocode_cache.json")
+        self.cache_path = Path(cache_path)
 
-    errors_mask = parsed.isna() & data[col].notna()
-    if errors_mask.sum() > 0:
-        logger.warning(f"Incorrectly formatted {dtype} values dropped: {errors_mask.sum()} rows in {col}.")
-        logger.info(f"Shape before {data.shape[0]}")
-        data = data.drop(index=data[errors_mask].index)
-        logger.info(f"Shape after {data.shape[0]}")
-    data[col] = parsed
-    return data
- 
- 
+        # Load existing cache or start empty
+        self.cache = self._load_cache()
 
-def get_lat_lng(city_name: str, state_name: str, country: str):
-    """
-    Computes the latitude and longitude of a location using Nominatim.
+    def _load_cache(self):
+        if self.cache_path.exists():
+            try:
+                with open(self.cache_path, "r", encoding="utf-8") as fh:
+                    return json.load(fh) or {}
+            except Exception as e:
+                logger.warning(f"Failed to load geocode cache: {e}")
+        return {}
 
-    Args:
-        city_name (str): Name of the city.
-        state_name (str or None): Name of the state (optional).
-        country (str): Name of the country.
-
-    Returns:
-        tuple: (latitude, longitude) if found, else (None, None).
-    """
-    if not city_name or not country:
-        logger.warning(f"Missing city or country: city='{city_name}', country='{country}'")
-        return None, None
-
-    query = f"{city_name}, {state_name}, {country}" if state_name else f"{city_name}, {country}"
-    geolocator = Nominatim(user_agent="my_app")
-
-    try:
-        location = geolocator.geocode(query)
-        if location:
-            logger.debug(f"Geocoded {query}: ({location.latitude}, {location.longitude})")
-            return location.latitude, location.longitude
-        else:
-            logger.warning(f"Geocoding failed for {query}")
+    def geocode_one(self, query: str):
+        if not query:
             return None, None
-    except Exception as e:
-        logger.error(f"Error geocoding {query}: {e}")
-        return None, None
+        if query in self.cache:
+            return tuple(self.cache[query])
+        try:
+            loc = self._geocode(query)
+            latlng = (loc.latitude, loc.longitude) if loc else (None, None)
+            self.cache[query] = latlng
+            return latlng
+        except Exception as e:
+            logger.error(f"Geocoding error for '{query}': {e}")
+            self.cache[query] = (None, None)
+            return None, None
+
+    def save_cache(self):
+        try:
+            with open(self.cache_path, "w", encoding="utf-8") as fh:
+                json.dump(self.cache, fh, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"Failed to save geocode cache: {e}")
 
 
-def handle_null_zip_codes(data: pd.DataFrame) -> pd.DataFrame:
-    """
-    Imputes missing latitude and longitude for customer and seller locations
-    using city, state, and country information.
 
-    Args:
-        data (pd.DataFrame): DataFrame containing columns:
-            - '{prefix}_city', '{prefix}_state', '{prefix}_lat', '{prefix}_lng', 'country'
-            - prefix is either 'customer' or 'seller'
+class PreprocessUtils:
+    @staticmethod
+    def string_handling(series: pd.Series, fix_names: dict) -> pd.Series:
+        """Strip whitespace, lowercase, and replace strings based on mapping."""
+        logger.info(f"Cleaning strings in column {series.name}")
+        if fix_names:
+            mapping = {k.lower(): v for k, v in fix_names.items()}
+            series = series.replace(mapping)
+        return series.astype("category")
 
-    Returns:
-        pd.DataFrame: DataFrame with imputed lat/lng values. Rows with missing
-                      city or country remain NaN but are logged.
-    """
-    for prefix in ['customer', 'seller']:
-        loc_missing_rows = 0
-        missing = data[data[f'{prefix}_lat'].isnull() | data[f'{prefix}_lng'].isnull()]
-        logger.debug(f"Started null handling zip codes for {prefix}... Total missing: {len(missing)}")
+    @staticmethod
+    def replace_rare_categories(series: pd.Series, threshold: int, replacement='Other') -> pd.Series:
+        """Replace rare categories with 'Other', preserves NaNs."""
+        counts = series.value_counts(dropna=True)
+        rare = counts[counts < threshold].index.tolist()
+        logger.debug(f"Replacing {len(rare)} rare categories in {series.name}")
+        return series.where(~series.isin(rare), replacement).astype('category')
 
-        for idx, row in missing.iterrows():
-            if pd.isnull(row['country']) or pd.isnull(row[f'{prefix}_city']):
-                loc_missing_rows += 1
-                logger.debug(f"Skipping row {idx} for {prefix}: missing city or country")
+    @staticmethod
+    def failed_parses_handling(data: pd.DataFrame, col: str, parsed: pd.Series, dtype: str) -> pd.DataFrame:
+        errors_mask = parsed.isna() & data[col].notna()
+        n_errors = int(errors_mask.sum())
+        if n_errors > 0:
+            logger.warning(f"Dropped {n_errors} incorrectly formatted {dtype} rows in {col}")
+            data = data.drop(index=data[errors_mask].index)
+        data.loc[:, col] = parsed.reindex(index=data.index)
+        return data
+
+    @staticmethod
+    def handle_null_zip_codes(data: pd.DataFrame, geocoder: GeoCoder, persist_cache: bool = True) -> pd.DataFrame:
+        """Fill missing lat/lng using geocoder object."""
+        for prefix in ["customer", "seller"]:
+            lat_col, lng_col = f"{prefix}_lat", f"{prefix}_lng"
+            city_col, state_col = f"{prefix}_city", f"{prefix}_state"
+            if not {lat_col, lng_col, city_col, state_col, "country"}.issubset(data.columns):
                 continue
+            mask_need = (data[lat_col].isna() | data[lng_col].isna()) & data[city_col].notna() & data["country"].notna()
+            combos = data.loc[mask_need, [city_col, state_col, "country"]].drop_duplicates().values.tolist()
+            combo_to_latlng = {tuple(c): geocoder.geocode_one(f"{c[0]}, {c[1]}, {c[2]}") for c in combos}
 
-            lat, lng = get_lat_lng(row[f'{prefix}_city'], row.get(f'{prefix}_state'), row['country'])
-            data.at[idx, f'{prefix}_lat'] = lat
-            data.at[idx, f'{prefix}_lng'] = lng
-            time.sleep(1)  # Respect Nominatim rate limits
+            data[lat_col] = data.apply(lambda r: r[lat_col] if pd.notna(r[lat_col]) else combo_to_latlng.get((r[city_col], r[state_col], r["country"]))[0], axis=1)
+            data[lng_col] = data.apply(lambda r: r[lng_col] if pd.notna(r[lng_col]) else combo_to_latlng.get((r[city_col], r[state_col], r["country"]))[1], axis=1)
 
-        logger.warning(f"{loc_missing_rows} rows were missing essential location info for {prefix} "
-                       "and could not be imputed.")
-    logger.info("Null zip code handling complete.")
+        if persist_cache:
+            geocoder.save_cache()
+        logger.info("Null zip code handling complete.")
+        return data
+
+    @staticmethod
+    def haversine(lat1, lon1, lat2, lon2):
+        """Vectorized Haversine distance in km."""
+        lat1, lon1, lat2, lon2 = map(np.radians, (lat1, lon1, lat2, lon2))
+        dlat, dlon = lat2 - lat1, lon2 - lon1
+        a = np.sin(dlat/2)**2 + np.cos(lat1)*np.cos(lat2)*np.sin(dlon/2)**2
+        c = 2 * np.arcsin(np.sqrt(np.clip(a, 0, 1)))
+        return 6371 * c
+
+    @staticmethod
+    def cyclical_encode(df, col, max_val):
+        df[col + '_sin'] = np.sin(2 * np.pi * df[col] / max_val)
+        df[col + '_cos'] = np.cos(2 * np.pi * df[col] / max_val)
+        return df
     
-    return data
+    @staticmethod
+    def historical_avg_speed(df, group_col: str, target_col='observed_speed'):
+        df = df.sort_values('order_purchase_timestamp')
+        return df.groupby(group_col)[target_col].transform(lambda s: s.shift().expanding().mean())

@@ -5,57 +5,117 @@ task_type: "classification"   # or "regression"
 
 # paths
 paths:
-  #I kept raw data elsewhere, as it included multiple files
-  raw_data_folder: "(your working directory)/data(brazil)/brazil_ecom"
-  processed_data: "(your working directory)/brazil_ecom/data/brazil_ecommrce.csv"
-  model_dir: "(your working directory)/brazil_ecom/models/"
-  logs_dir: "(your working directory)/brazil_ecom/logs/"
-  figures_dir: "(your working directory)/brazil_ecom/figures/"
-
+  raw_data_folder: "(your dir to project)/data(brazil)/brazil_ecom"
+  processed_data: "(your dir to project)/brazil_ecom/data/brazil_ecommerce.csv"
+  GEOCODE_CACHE_PATH: "((your dir to project)/brazil_ecom/data/geocode_cache.json"
+  model_dir: "(your dir to project)/brazil_ecom/models/"
+  logs_dir: "(your dir to project)/brazil_ecom/logs/"
+  figures_dir: "(your dir to project)/brazil_ecom/figures/"
 
 # --- LOG ---
 logger:
-  log_file: "(your working directory)/brazil_ecom/logs/pipeline.log"
+  log_file: "(your dir to project)/brazil_ecom/logs/pipeline.log"
   level: INFO
-  
+
 # data settings 
 data:
-  target_column: "delay_bin"  # for classification
-  
-  num_cols: ['late_delivery', 'customer_zip_code_prefix', 'raw_price', 'freight_value',
-            'num_items', 'payment_value', 'seller_id',
-            'seller_zip_code_prefix', , 'seller_lat',
-            'seller_lng', 'customer_lat', 'customer_lng', 'product_weight_g',
-            'product_length_cm', 'product_height_cm', 'product_width_cm']
+  target_column: "days_till_arrival_binned"  # for classification
 
-  str_cols: ['payment_type', 'product_category_name_english', 'seller_city', 'order_id', 'customer_id',
-            'customer_city', 'seller_state', 'order_status', 'customer_state']
+  num_cols: 
+    - 'late_delivery'
+    - 'customer_zip_code_prefix'
+    - 'raw_price'
+    - 'freight_value'
+    - 'num_items'
+    - 'payment_value'
+    - 'seller_id'
+    - 'seller_zip_code_prefix'
+    - 'seller_lat'
+    - 'seller_lng'
+    - 'customer_lat'
+    - 'customer_lng'
+    - 'product_weight_g'
+    - 'product_length_cm'
+    - 'product_height_cm'
+    - 'product_width_cm'
 
-  date_cols: ['order_purchase_timestamp', 'order_approved_at', 'order_delivered_carrier_date',
-       'order_delivered_customer_date', 'order_estimated_delivery_date']     
-  zip_cols_seller: ['seller_lat','seller_lng']
-  zip_cols_customer: ['customer_lat','customer_lng']
-  
+  str_cols: 
+    - 'payment_type'
+    - 'product_category_name_english'
+    - 'seller_city'
+    - 'order_id'
+    - 'customer_id'
+    - 'customer_city'
+    - 'seller_state'
+    - 'order_status'
+    - 'customer_state'
+
+  date_cols: 
+    - 'order_purchase_timestamp'
+    - 'order_approved_at'
+    - 'order_delivered_carrier_date'
+    - 'order_delivered_customer_date'
+    - 'order_estimated_delivery_date'
+
+  cols_to_drop: 
+    - 'order_id'
+    - 'freight_value'
+    - 'raw_price'
+    - 'customer_unique_id'
+    - 'order_purchase_timestamp'
+    - 'order_approved_at'
+    - 'order_delivered_customer_date'
+    - 'order_estimated_delivery_date'
+    - 'product_weight_g'
+    - 'product_length_cm'
+    - 'product_height_cm'
+    - 'product_width_cm'
+    - 'payment_installments'
+    - 'customer_id'
+    - 'order_delivered_carrier_date'
+    - 'late_delivery'
+    - 'customer_zip_code_prefix'
+    - 'customer_city'
+    - 'customer_state'
+    - 'payment_value'
+    - 'seller_id'
+    - 'seller_zip_code_prefix'
+    - 'seller_city'
+    - 'seller_state'
+    - 'seller_lat'
+    - 'seller_lng'
+    - 'observed_speed'
+    - 'customer_lat'
+    - 'customer_lng'
+
+  zip_cols_seller: 
+    - 'seller_lat'
+    - 'seller_lng'
+
+  zip_cols_customer: 
+    - 'customer_lat'
+    - 'customer_lng'
+
   test_size: 0.3
-  test_to_val: 0.5 # once 30% of data is test data, how much is retained for validation vs test ? (RATIO)
+  test_to_val: 0.5 # once 30% of data is test data, how much is retained for validation vs test
   min_rows: 15
   stratify: True   # only applies for classification
+  country: "Brazil"
+  target_bin_method: "quantile"
+
+geocoding:
+  user_agent: "brazil_ecom_ml_pipeline (anastasia.ds.project@gmail.com)"
+  min_delay_seconds: 1
+  max_retries: 2
+  error_wait_seconds: 2
 
 rare_thresholds:
   product_names: 50
   num_items: 10
-# #preprocessing 
-# preprocessing:
-#   scale_numeric: True
-#   encode_catesgorical: "onehot"     # or "label"
-#   impute_strategy: "median"
+  days_till_arrival_ratio: 0.98
 
-# bins:
-#     - 0
-#     - 15
-#     - 60
-#     - 180
-  bin_labels: ["on_time", "short_delay", "long_delay"]
+# bins
+bin_labels: ["on_time", "short_delay", "long_delay"]
 
 # training
 training:
@@ -68,5 +128,3 @@ evaluation:
   metrics_classification: ["accuracy", "f1", "roc_auc"]
   metrics_regression: ["r2", "rmse", "mae"]
   output_confusion_matrix: True
-
-

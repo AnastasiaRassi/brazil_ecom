@@ -1,0 +1,17 @@
+pandas
+scikit-learn
+matplotlib
+seaborn
+scipy
+xgboost
+lightgbm
+catboost
+statsmodels
+imblearn
+mlflow
+holidays
+category-encoders
+ydata-profiling
+geopy
+flaml
+python-dotenv
