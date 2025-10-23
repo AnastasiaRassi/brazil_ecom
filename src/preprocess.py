@@ -229,14 +229,20 @@ class NullHandler:
 
 class FeatureEngineer:
     """Generates derived features: distances, times, product metrics, cyclical encoding, speed, and traffic proxies."""
+
     @staticmethod
-    def feature_engineering(data: pd.DataFrame) -> pd.DataFrame:
+    def feature_engineering(data: pd.DataFrame, config: dict) -> pd.DataFrame:
+        logger.info("Starting feature engineering...")
+
         # Define categories for flags
-        perishable = {'food', 'drinks', 'food_drink','other','signaling_and_security','art'}
+        perishable = {'food', 'drinks', 'food_drink', 'other', 'signaling_and_security', 'art'}
         slow_cats = {'christmas_supplies', 'garden_tools', 'home_comfort', 'dvds_blu_ray', 'construction_tools_tools'}
         fast_cats = {'drinks', 'food', 'construction_tools_lights'}
 
+        logger.debug("Defined product category flag sets (perishable, slow, fast).")
+
         # Distance and time features
+        logger.debug("Calculating distance and time-based features...")
         data['distance_km'] = PreprocessUtils.haversine(
             data['customer_lat'], data['customer_lng'],
             data['seller_lat'], data['seller_lng']
@@ -245,19 +251,22 @@ class FeatureEngineer:
         data['carrier_delay_hours'] = (data['order_delivered_carrier_date'] - data['order_approved_at']).dt.total_seconds() / 3600
 
         # Extract date parts
+        logger.debug("Extracting datetime components...")
         for prefix, col in [('purchase', 'order_purchase_timestamp'), ('carrier_reception', 'order_delivered_carrier_date')]:
             data[f'{prefix}_dayofweek'] = data[col].dt.dayofweek
             data[f'{prefix}_year'] = data[col].dt.year
             data[f'{prefix}_month'] = data[col].dt.month
             data[f'{prefix}_day'] = data[col].dt.day
             data[f'{prefix}_hour'] = data[col].dt.hour
-        data['carrier_reception_weekend'] = data['carrier_reception_dayofweek'].isin([5,6]).astype(int)
+        data['carrier_reception_weekend'] = data['carrier_reception_dayofweek'].isin([5, 6]).astype(int)
 
         # Holiday flag
+        logger.debug("Adding Brazilian holiday flag...")
         br_holidays = holidays.Brazil(years=[2016, 2017, 2018])
         data['is_holiday'] = data['order_delivered_carrier_date'].dt.date.apply(lambda x: int(x in br_holidays))
 
         # Product-related features
+        logger.debug("Computing product-based metrics (volume, density, freight, totals)...")
         data['product_volume_cm3'] = data['product_length_cm'] * data['product_width_cm'] * data['product_height_cm']
         data['product_density_g_per_cm3'] = data['product_weight_g'] / data['product_volume_cm3'].replace(0, np.nan)
         data['freight_ratio'] = data['freight_value'] / data['raw_price'].replace(0, np.nan)
@@ -267,6 +276,7 @@ class FeatureEngineer:
         data['installment_value'] = data['payment_value'] / data['payment_installments'].replace(0, np.nan)
 
         # Combined and flag features
+        logger.debug("Creating combined and flag features...")
         data['weight_times_distance'] = data['total_weight'] * data['distance_km']
         data['processing_over_distance'] = data['processing_time_hours'] / data['distance_km'].replace(0, np.nan)
         data['is_perishable'] = data['product_category_name_english'].isin(perishable).astype(int)
@@ -274,6 +284,7 @@ class FeatureEngineer:
         data['is_fast'] = data['product_category_name_english'].isin(fast_cats).astype(int)
 
         # Cyclical encoding for date/time
+        logger.debug("Applying cyclical encoding to date/time features...")
         cyclical_cols = {
             'purchase_month': 12, 'purchase_day': 31, 'purchase_hour': 24,
             'carrier_reception_month': 12, 'carrier_reception_day': 31, 'carrier_reception_hour': 24,
@@ -282,16 +293,29 @@ class FeatureEngineer:
             data = PreprocessUtils.cyclical_encode(data, col, max_val)
 
         # Speed features
+        logger.debug("Calculating observed and historical speed features...")
         data['observed_speed'] = data['distance_km'] / data['days_till_arrival']
+
         for group in ['product_category_name_english', 'seller_id', 'customer_id', 'customer_city', 'customer_state']:
+            logger.debug(f"Computing historical average speed for group: {group}")
             data[f'avg_speed_{group.split("_")[-1]}'] = PreprocessUtils.historical_avg_speed(data, group)
+
         global_mean_speed = data['observed_speed'].mean()
+        logger.debug(f"Filling missing speed values with global mean: {global_mean_speed:.2f}")
         for col in [c for c in data.columns if c.startswith('avg_speed')]:
             data[col].fillna(global_mean_speed, inplace=True)
+
+        logger.debug("Estimating predicted delivery days per grouping...")
         for prefix in ['category', 'seller', 'customer', 'customer_city', 'customer_state', 'seller_city']:
             col_name = f'avg_speed_{prefix}'
-            data[f'pred_days_{prefix}'] = data['distance_km'] / data[col_name]
-            
+            if col_name in data.columns:
+                data[f'pred_days_{prefix}'] = data['distance_km'] / data[col_name]
+
         # Drop columns specified in config
-        data.drop(columns=config["data"]["cols_to_drop"], inplace=True, errors='ignore')
+        cols_to_drop = config.get("data", {}).get("cols_to_drop", [])
+        if cols_to_drop:
+            logger.debug(f"Dropping columns: {cols_to_drop}")
+            data.drop(columns=cols_to_drop, inplace=True, errors='ignore')
+
+        logger.info(f"Feature engineering complete. Final shape: {data.shape}")
         return data

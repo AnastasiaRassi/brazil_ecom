@@ -137,6 +137,7 @@ class PreprocessUtils:
     def cyclical_encode(df, col, max_val):
         df[col + '_sin'] = np.sin(2 * np.pi * df[col] / max_val)
         df[col + '_cos'] = np.cos(2 * np.pi * df[col] / max_val)
+        logger.info("Cycle encoding complete.")
         return df
     
     @staticmethod
