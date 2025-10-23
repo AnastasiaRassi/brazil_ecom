@@ -8,3 +8,4 @@ notebooks/training_new.ipynb
 notebooks/training.ipynb
 late_deliveries_pred
 config.yaml
+.env

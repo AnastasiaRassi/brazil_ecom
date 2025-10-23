@@ -1,19 +1,20 @@
-import pandas as pd
-import numpy as np
-import os, yaml, json, time
+import pandas as pd, os, yaml, json, time, logging, numpy as np
 from pathlib import Path
+from dotenv import load_dotenv
 from geopy.geocoders import Nominatim
 from geopy.extra.rate_limiter import RateLimiter
-from src import setup_logger
+from src import GeneralUtils
 
-logger = setup_logger()
-base_path = 'C:/Users/aalrassi/Documents/anastasiawork/ML_and_DS/brazil_ecom/'
+logger = GeneralUtils.setup_logger()
+base_path = os.getenv("BASE_PATH")
 config_path = os.path.join(base_path, 'config.yaml')
 
 # Load config
 with open(config_path, "r") as f:
     config = yaml.safe_load(f) or {}
 
+import  os, yaml
+load_dotenv()  
 
 class GeoCoder:
     def __init__(self, user_agent=None, cache_path=None):
@@ -142,3 +143,32 @@ class PreprocessUtils:
     def historical_avg_speed(df, group_col: str, target_col='observed_speed'):
         df = df.sort_values('order_purchase_timestamp')
         return df.groupby(group_col)[target_col].transform(lambda s: s.shift().expanding().mean())
+    
+
+class GeneralUtils:
+    @staticmethod
+    def setup_logger(config_path=None):
+        if config_path is None:
+            config_path = os.path.join(base_path, "config.yaml")
+        
+        # Load config
+        with open(config_path, "r") as f:
+            config = yaml.safe_load(f)
+
+        log_file = config["logger"]["log_file"]
+        log_level = config["logger"].get("level", "INFO").upper()
+
+        # Setup logging
+        logging.basicConfig(
+            level=getattr(logging, log_level, logging.INFO),
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            handlers=[
+                logging.FileHandler(log_file),
+                logging.StreamHandler()
+            ]
+        )
+
+        logger = logging.getLogger(__name__)
+        logger.info("Logger is set up and ready to use.")
+        
+        return logger

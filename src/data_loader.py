@@ -1,47 +1,13 @@
-import pandas as pd
+import pandas as pd, os, yaml, numpy as np
 from typing import List, Optional
+from src import GeneralUtils, Preprocessor
 
-# DataLoader class to load and validate CSV files
+logger = GeneralUtils.setup_logger()
 
-class DataLoader:
-    # Initialize with optional required fields ( this is the combination of all of str cols, num cols and date cols found in config.yaml)
-    def __init__(self, required_fields: Optional[List[str]] = None):
-        self.required_fields = required_fields
+base_path = os.getenv("BASE_PATH")
 
-    # Method to load CSV and validate required fields
-    def load_csv(self, file_path: str, min_rows: int) -> pd.DataFrame:
-        """
-        Load a CSV file and validate required fields and minimum rows.
-        args:
-            file_path (str): Path to the CSV file.
-            min_rows (int): Minimum number of rows required in the dataset. (within config.yaml)
-        returns:
-            pd.DataFrame: Loaded DataFrame if valid.
-        """
-
-        # Check if the file has a .csv extension
-        if not file_path.lower().endswith('.csv'):
-            raise ValueError("File must be a CSV")
-
-        # Try reading the CSV
-        try:
-            df = pd.read_csv(file_path)
-        except Exception as e:
-            raise ValueError(f"Error reading CSV: {e}")
-
-        # Check for required columns
-        if self.required_fields:
-            # Identify missing fields
-            missing_fields = [field for field in self.required_fields if field not in df.columns]
-            # Raise error if any required fields are missing
-            if missing_fields:
-                raise ValueError(f"Missing required fields: {missing_fields}")
-        # Check for minimum number of rows
-        if df.shape[0] < min_rows :
-            raise ValueError("Data must have at least {min_rows} rows, please populate your dataset for effective training.")
-
-        return df
-        
-    
-
+# Load configuration file
+config_path = os.path.join(base_path, 'config.yaml')
+with open(config_path, "r") as f:
+    config = yaml.safe_load(f) or {}
 
