@@ -2,6 +2,7 @@
 project_name: "delay_prediction"
 random_seed: 42
 task_type: "classification"   # or "regression"
+production: true   # or false
 
 # paths
 paths:

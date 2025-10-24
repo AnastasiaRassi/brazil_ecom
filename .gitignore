@@ -9,3 +9,5 @@ notebooks/training.ipynb
 late_deliveries_pred
 config.yaml
 .env
+ecom_dataset.7z
+logs

@@ -31,7 +31,10 @@ class Preprocessor:
         self.data = NullHandler.handle_nulls(self.data)
         self.data.dropna(inplace=True) # drop what couldn't be handled 
         self.data = OutlierHandler.handle_outliers(self.data)
-        return FeatureEngineer.feature_engineering(self.data)
+        self.data = FeatureEngineer.feature_engineering(self.data)
+        self.data.to_csv(os.path.join(base_path, "data/preprocessed_dataset.csv"), index=False)
+
+        return 
 
 
 class Validator:
